@@ -10,6 +10,8 @@ import { LoginUsuarioDto } from './dto/login-user.dto';
 import { JwtPayload } from './interface/jwt-payload.interface';
 import { JwtService } from '@nestjs/jwt';
 import { Role } from 'src/roles/entities/role.entity';
+import { LoginResponse } from './interface/login-response.interface';
+import { Cliente } from '../cliente/entities/cliente.entity';
 
 
 @Injectable()
@@ -22,6 +24,8 @@ export class UsuarioService {
     @InjectRepository(Role)
     private readonly rolRepository: Repository<Role>,
     
+    @InjectRepository(Cliente)
+    private readonly clienteRepository:Repository<Cliente>,
 
     private readonly jwtService: JwtService
 
@@ -47,7 +51,7 @@ export class UsuarioService {
       await this.userRepository.save(user)
       return {
         ...user,
-        token: this.getJwtToken({id: user.id})
+        token: this.getJwtToken({id: user.id, nombre: user.nombre})
       }
 
     } catch (error) {
@@ -55,39 +59,61 @@ export class UsuarioService {
     }
   }
 
-  async login(loginUsuarioDto: LoginUsuarioDto){
-    
-    const {password, username}=loginUsuarioDto
+  async login(unifiedLoginDto: LoginUsuarioDto): Promise<LoginResponse> {
+    const { password, username } = unifiedLoginDto;
 
-    const user=await this.userRepository.findOne({
-      where: {username},
-      select: {username: true, password: true, nombre:true, id:true}
-    })
+    // Primero buscar en usuarios
+    const user = await this.userRepository.findOne({
+      where: { username },
+      select: { username: true, password: true, nombre: true, id: true, telefono: true },
+      relations: ['rol']
+    });
 
-    if (!user) {
-      throw new UnauthorizedException('Credenciales incorrectas')
+    if (user) {
+      // Verificar contraseña del usuario
+      if (!bcrypt.compareSync(password, user.password)) {
+        throw new UnauthorizedException('Credenciales incorrectas');
+      }
+
+      return {
+        id: user.id,
+        nombre: user.nombre,
+        username: user.username,
+        userType: 'usuario',
+        rol: user.rol?.rol,
+        telefono: user.telefono,
+        token: this.getJwtToken({id: user.id, nombre: user.nombre , userType: 'usuario'})
+      };
     }
 
-    if (!bcrypt.compareSync(password, user.password)) {
-      throw new UnauthorizedException('Credenciales incorrectas')
+    // Si no se encuentra en usuarios, buscar en clientes
+    const cliente = await this.clienteRepository.findOne({
+      where: { username }
+    });
+
+    if (cliente) {
+      // Verificar contraseña del cliente
+      if (!bcrypt.compareSync(password, cliente.password)) {
+        throw new UnauthorizedException('Credenciales incorrectas');
+      }
+
+      return {
+        id: cliente.id,
+        nombre: cliente.nombre,
+        username: cliente.username,
+        userType: 'cliente',
+        telefono: cliente.telefono,
+        token: this.getJwtToken({id: cliente.id, nombre: user.nombre , userType: 'cliente'})
+      };
     }
-    delete user.password
-    return {
-      ...user,
-      token: this.getJwtToken({id: user.id})
-    }
-    
-    // try {
-      
-    // } catch (error) {
-    //   this.handleDBErrors(error)
-    // }
+
+    throw new UnauthorizedException('Credenciales incorrectas');
   }
 
   async checkStatus(user:Usuario){
     return {
       ...user,
-      token: this.getJwtToken({id: user.id})
+      token: this.getJwtToken({id: user.id, nombre: user.nombre})
     }
   }
 

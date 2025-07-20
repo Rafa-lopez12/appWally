@@ -4,40 +4,50 @@ import { UpdateClienteDto } from './dto/update-cliente.dto';
 import { Repository } from 'typeorm';
 import { Cliente } from './entities/cliente.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import {validate as isuuid} from 'uuid'
-import { throwDeprecation } from 'process';
+import { validate as isuuid } from 'uuid';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class ClienteService {
 
-  private readonly logger = new Logger('ProductsService');
+  private readonly logger = new Logger('ClienteService');
+  
   constructor(
     @InjectRepository(Cliente)
-    private readonly clienteRepository:Repository<Cliente>
-  ){}
+    private readonly clienteRepository: Repository<Cliente>
+  ) {}
   
   async create(createClienteDto: CreateClienteDto) {
     try {
-      const cliente=this.clienteRepository.create(createClienteDto)
-      await this.clienteRepository.save(cliente)
-      return cliente
+      const { password, ...clienteData } = createClienteDto;
+      
+      const cliente = this.clienteRepository.create({
+        ...clienteData,
+        password: bcrypt.hashSync(password, 10)
+      });
+      
+      await this.clienteRepository.save(cliente);
+      
+      // No devolver la password
+      delete cliente.password;
+      return cliente;
+      
     } catch (error) {
-      console.log(error)
+      this.handleDBExceptions(error);
     }
-    
   }
 
   findAll() {
-    const cliente=this.clienteRepository.find()
-    return cliente
+    return this.clienteRepository.find();
   }
 
   async findOne(id: string) {
-    let cliente:Cliente
+    let cliente: Cliente;
+    
     if (isuuid(id)) {
-      cliente=await this.clienteRepository.findOneBy({id:id})
-    }else{
-      const queryBuilder = this.clienteRepository.createQueryBuilder('prod'); 
+      cliente = await this.clienteRepository.findOneBy({ id: id });
+    } else {
+      const queryBuilder = this.clienteRepository.createQueryBuilder('cliente'); 
       cliente = await queryBuilder
         .where('UPPER(nombre) =:nombre', {
           nombre: id.toUpperCase(),
@@ -46,41 +56,48 @@ export class ClienteService {
     }
 
     if (!cliente) {
-      throw new NotFoundException(`Cliente con id ${id} no existe`)
+      throw new NotFoundException(`Cliente con id ${id} no existe`);
     }
 
-    return cliente
+    return cliente;
   }
   
-
   async update(id: string, updateClienteDto: UpdateClienteDto) {
-    const cliente= await this.clienteRepository.preload({
-      id:id,
-      ...updateClienteDto
-    })
+    const { password, ...updateData } = updateClienteDto;
+    
+    const cliente = await this.clienteRepository.preload({
+      id: id,
+      ...updateData,
+      ...(password && { password: bcrypt.hashSync(password, 10) })
+    });
+    
     if (!cliente) {
-      throw new NotFoundException(`No existe cliente con el id: ${ id } `)
+      throw new NotFoundException(`No existe cliente con el id: ${id}`);
     }
+    
     try {
-      await this.clienteRepository.save(cliente)
-      return cliente
+      await this.clienteRepository.save(cliente);
+      delete cliente.password;
+      return cliente;
     } catch (error) {
-      this.handleDBExceptions(error)
+      this.handleDBExceptions(error);
     }
   }
 
   async remove(id: string) {
-    const cliente= await this.clienteRepository.findOne({where: { id } })
-    await this.clienteRepository.remove(cliente)
+    const cliente = await this.clienteRepository.findOne({ where: { id } });
+    if (!cliente) {
+      throw new NotFoundException(`Cliente con id ${id} no existe`);
+    }
+    await this.clienteRepository.remove(cliente);
   }
 
-  private handleDBExceptions( error: any ) {
-
-    if ( error.code === '23505' )
+  private handleDBExceptions(error: any) {
+    if (error.code === '23505') {
       throw new BadRequestException(error.detail);
+    }
     
-    this.logger.error(error)
-    // console.log(error)
+    this.logger.error(error);
     throw new InternalServerErrorException('Unexpected error, check server logs');
   }
 }
