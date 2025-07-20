@@ -103,19 +103,48 @@ export class UsuarioService {
         username: cliente.username,
         userType: 'cliente',
         telefono: cliente.telefono,
-        token: this.getJwtToken({id: cliente.id, nombre: user.nombre , userType: 'cliente'})
+        token: this.getJwtToken({id: cliente.id, nombre: cliente.nombre , userType: 'cliente'})
       };
     }
 
     throw new UnauthorizedException('Credenciales incorrectas');
   }
 
-  async checkStatus(user:Usuario){
-    return {
-      ...user,
-      token: this.getJwtToken({id: user.id, nombre: user.nombre})
+  async checkStatus(user: Usuario | Cliente): Promise<LoginResponse> {
+    // Verificar si es un Usuario (tiene propiedad 'rol')
+    if ('rol' in user) {
+      const usuario = user as Usuario;
+      return {
+        id: usuario.id,
+        nombre: usuario.nombre,
+        username: usuario.username,
+        userType: 'usuario',
+        rol: usuario.rol?.rol,
+        telefono: usuario.telefono,
+        token: this.getJwtToken({
+          id: usuario.id, 
+          nombre: usuario.nombre, 
+          userType: 'usuario'
+        })
+      };
+    } else {
+      // Es un Cliente
+      const cliente = user as Cliente;
+      return {
+        id: cliente.id,
+        nombre: cliente.nombre,
+        username: cliente.username,
+        userType: 'cliente',
+        telefono: cliente.telefono,
+        token: this.getJwtToken({
+          id: cliente.id, 
+          nombre: cliente.nombre, 
+          userType: 'cliente'
+        })
+      };
     }
   }
+
 
   findAll() {
     const user=this.userRepository.find()
