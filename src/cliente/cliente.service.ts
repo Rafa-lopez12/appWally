@@ -6,6 +6,7 @@ import { Cliente } from './entities/cliente.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { validate as isuuid } from 'uuid';
 import * as bcrypt from 'bcrypt';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class ClienteService {
@@ -91,6 +92,48 @@ export class ClienteService {
     }
     await this.clienteRepository.remove(cliente);
   }
+
+  async changePassword(clienteId: string, changePasswordDto: ChangePasswordDto) {
+    try {
+      const { currentPassword, newPassword } = changePasswordDto;
+      
+      // Buscar cliente con password incluido
+      const cliente = await this.clienteRepository.findOne({
+        where: { id: clienteId },
+        select: ['id', 'nombre', 'username', 'password', 'telefono']
+      });
+  
+      if (!cliente) {
+        throw new NotFoundException('Cliente no encontrado');
+      }
+  
+      // Verificar contraseña actual
+      const isCurrentPasswordValid = bcrypt.compareSync(currentPassword, cliente.password);
+      if (!isCurrentPasswordValid) {
+        throw new BadRequestException('La contraseña actual es incorrecta');
+      }
+  
+      // Verificar que la nueva contraseña sea diferente
+      const isSamePassword = bcrypt.compareSync(newPassword, cliente.password);
+      if (isSamePassword) {
+        throw new BadRequestException('La nueva contraseña debe ser diferente a la actual');
+      }
+  
+      // Actualizar contraseña
+      cliente.password = bcrypt.hashSync(newPassword, 10);
+      await this.clienteRepository.save(cliente);
+  
+      return {
+        message: 'Contraseña actualizada correctamente',
+        success: true
+      };
+    } catch (error) {
+      this.handleDBExceptions(error);
+    }
+  }
+  
+
+
 
   private handleDBExceptions(error: any) {
     if (error.code === '23505') {
